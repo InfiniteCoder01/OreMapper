@@ -2,6 +2,7 @@
 
  Important:
   ☐ Save objects together with map & check them, when loaded
+  ☐ Unsafe math `as_type`!!!
 
  Project:
    ☐ Create/Open Project
