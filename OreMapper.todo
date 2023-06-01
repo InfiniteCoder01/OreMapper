@@ -1,0 +1,31 @@
+ ✔ Organize TODO @done (23-06-01 13:59)
+
+ Important:
+  ☐ Save objects together with map & check them, when loaded
+
+ Project:
+   ☐ Create/Open Project
+   ☐ Remember last project
+
+ Content View:
+   ☐ Create map
+   ☐ Move/rename files
+ 
+   ☐ Delete files
+   ☐ Check uif atlas was deleted in map
+   ☐ Check if atlas/map was deleted in object's component properties
+
+
+ Components:
+   ✔ Object component properties sorted @done (23-05-31 14:46)
+   ☐ Reorder component properties
+   ✔ Check object's component properties against base component properties @done (23-05-31 23:01)
+
+ Other:
+   ☐ Edit tile size
+   ☐ Resizing maps
+   ☐ Move object using arrows
+   ☐ Snap object to a grid 
+
+ Polish:
+   ☐ Add font awesome
