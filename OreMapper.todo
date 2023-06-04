@@ -1,7 +1,7 @@
  ✔ Organize TODO @done (23-06-01 13:59)
 
  Important:
-  ☐ Save objects together with map & check them, when loaded
+  ✔ Save objects together with map @done (23-06-02 00:19)
   ☐ Unsafe math `as_type`!!!
 
  Project:
@@ -19,14 +19,15 @@
 
  Components:
    ✔ Object component properties sorted @done (23-05-31 14:46)
-   ☐ Reorder component properties
+   ✔ Reorder component properties @done (23-06-01 17:11)
    ✔ Check object's component properties against base component properties @done (23-05-31 23:01)
 
  Other:
    ☐ Edit tile size
    ☐ Resizing maps
-   ☐ Move object using arrows
+   ✔ Move object using arrows @done (23-06-01 19:39)
    ☐ Snap object to a grid 
+   ☐ Better atlas/map select
 
  Polish:
    ☐ Add font awesome

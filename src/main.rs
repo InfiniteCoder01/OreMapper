@@ -39,7 +39,7 @@ impl eframe::App for Application {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Main views
         // Menu
-        TopBottomPanel::top("menu_bar").show(&ctx, |ui| {
+        TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Save").clicked() {
@@ -51,8 +51,8 @@ impl eframe::App for Application {
             })
         });
         // Status bar
-        TopBottomPanel::bottom("status_bar").show(&ctx, |ui| ui.label(self.status.clone()));
-        CentralPanel::default().show(&ctx, |ui| {
+        TopBottomPanel::bottom("status_bar").show(ctx, |ui| ui.label(self.status.clone()));
+        CentralPanel::default().show(ctx, |ui| {
             TopBottomPanel::bottom("bottom_panel")
                 .resizable(true)
                 .show_inside(ui, |ui| {

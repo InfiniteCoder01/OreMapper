@@ -1,12 +1,95 @@
 use crate::project::*;
 use itertools::Itertools;
 
+// ******************** ATLAS ******************** //
+#[derive(Serialize, Deserialize)]
+pub struct Atlas {
+    #[serde(skip)]
+    pub path: PathBuf,
+    #[serde(skip)]
+    pub image: image::RgbaImage,
+    pub tile_size: U16Vec2,
+}
+
+impl Atlas {
+    pub fn new(path: &Path) -> Result<Self> {
+        let image = image::open(path.to_str().unwrap())
+            .context("Failed to load IMAGE!")?
+            .to_rgba8();
+
+        let atl_path = path.with_extension("atl");
+        if atl_path.exists() {
+            Ok(Self {
+                path: path.to_path_buf(),
+                image,
+                ..serde_json::from_str(
+                    &std::fs::read_to_string(atl_path)
+                        .context(format!("Failed to load atlas from file {:?}!", path))?,
+                )
+                .context(format!("Failed to deserialize atlas from file {:?}!", path))?
+            })
+        } else {
+            let tile_size = TVec2::new(image.width(), image.height()).casted();
+            Ok(Self {
+                path: path.to_path_buf(),
+                image,
+                tile_size,
+            })
+        }
+    }
+
+    pub fn save(&self) -> Result<()> {
+        std::fs::write(
+            self.path.with_extension("atl"),
+            serde_json::to_string(&self)
+                .context(format!("Failed to serialize atlas! File: {:?}!", self.path))?,
+        )
+        .context(format!("Failed to save atlas to file {:?}!", self.path))?;
+        Ok(())
+    }
+
+    pub fn width(&self) -> u16 {
+        (self.image.width() / self.tile_size.x as u32) as u16
+    }
+
+    pub fn height(&self) -> u16 {
+        (self.image.height() / self.tile_size.y as u32) as u16
+    }
+
+    pub fn draw_tile(&self, to: &mut image::RgbaImage, pos: I32Vec2, tile: U32Vec2, size: I32Vec2) {
+        to.draw_subimage(
+            &self.image,
+            pos.casted(),
+            size,
+            tile.component_mul(&self.tile_size.casted()),
+            self.tile_size.casted(),
+        );
+    }
+}
+
+pub struct AtlasView {
+    pub atlas: Uuid,
+    pub selection_pos: U32Vec2,
+    pub selection_size: U32Vec2,
+}
+
+impl AtlasView {
+    pub fn new(atlas: Uuid) -> Self {
+        Self {
+            atlas,
+            selection_pos: U32Vec2::zeros(),
+            selection_size: U32Vec2::new(1, 1),
+        }
+    }
+}
+
+// ******************** FUNCTIONALITY ******************** //
 pub fn show(ui: &mut Ui, assets: &mut Assets) {
     if let Some(view) = assets.atlas_selected.as_mut() {
         if let Some(atlas) = assets.atlases.get(&view.atlas) {
-            let scale = (ui.available_size().x as f32 / atlas.image.width() as f32)
-                .min(ui.available_size().y as f32 / atlas.image.height() as f32);
-            let tile_size = &atlas.tile_size.as_type() * scale;
+            let scale = (ui.available_size().x / atlas.image.width() as f32)
+                .min(ui.available_size().y / atlas.image.height() as f32);
+            let tile_size = atlas.tile_size.casted() * scale;
 
             let mut image = EguiImage::new(
                 (atlas.image.width() as f32 * scale) as u32,
@@ -21,13 +104,13 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) {
                 );
                 canvas.draw_rect(
                     view.selection_pos
-                        .as_type()
+                        .casted()
                         .component_mul(&tile_size)
-                        .as_type(),
+                        .casted(),
                     view.selection_size
-                        .as_type()
+                        .casted()
                         .component_mul(&tile_size)
-                        .as_type(),
+                        .casted(),
                     image::Rgba([255, 0, 0, 255]),
                     3,
                 );
@@ -35,10 +118,10 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) {
             let response = image.ui(ui);
             if let Some(pos) = response.hover_pos() {
                 let pos = pos - response.rect.min;
-                let tile_pos = min2(&max(&pos.as_type(), 0), &response.rect.max.as_type())
-                    .as_type()
+                let tile_pos = min2(&max(&pos.casted(), 0), &response.rect.max.casted())
+                    .casted()
                     .component_div(&tile_size)
-                    .as_type();
+                    .casted();
                 if ui.input(|input| input.pointer.button_pressed(PointerButton::Primary)) {
                     view.selection_pos = tile_pos;
                 }
@@ -55,8 +138,7 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) {
 }
 
 pub fn export<W: std::io::Write>(assets: &mut Assets, file: &mut W) -> Result<()> {
-    file.write_u16::<LittleEndian>(assets.atlases.len() as u16)
-        .context("Failed to write atlas count to exported file!")?;
+    file.write_u16::<LittleEndian>(assets.atlases.len() as _)?;
     assets.atlas_indices.clear();
     for (index, (uuid, atlas)) in assets
         .atlases
@@ -64,18 +146,15 @@ pub fn export<W: std::io::Write>(assets: &mut Assets, file: &mut W) -> Result<()
         .sorted_by_key(|x| &x.1.path)
         .enumerate()
     {
-        assets.atlas_indices.insert(uuid.clone(), index as u16);
-        file.write_u16::<LittleEndian>(atlas.tile_size.x as u16)
-            .context("Failed to write atlas tile width to exported file!")?;
-        file.write_u16::<LittleEndian>(atlas.tile_size.y as u16)
-            .context("Failed to write atlas tile height to exported file!")?;
+        assets.atlas_indices.insert(*uuid, index as u16);
+        file.write_u16::<LittleEndian>(atlas.tile_size.x)?;
+        file.write_u16::<LittleEndian>(atlas.tile_size.y)?;
         file.write_u16::<LittleEndian>(
             (atlas.image.width() / atlas.tile_size.x as u32 * atlas.image.height()
-                / atlas.tile_size.y as u32) as u16,
-        )
-        .context("Failed to write atlas frame count to exported file!")?;
+                / atlas.tile_size.y as u32) as _,
+        )?;
 
-        // Export image itself
+        // Export the image itself
         for y in 0..atlas.height() {
             for x in 0..atlas.width() {
                 for pixel_y in 0..atlas.tile_size.y {
@@ -84,7 +163,7 @@ pub fn export<W: std::io::Write>(assets: &mut Assets, file: &mut W) -> Result<()
                             x as u32 * atlas.tile_size.x as u32 + pixel_x as u32,
                             y as u32 * atlas.tile_size.y as u32 + pixel_y as u32,
                         );
-                        file.write_u16::<BigEndian>(if pixel[3] < 128 {
+                        file.write_u16::<byteorder::BigEndian>(if pixel[3] < 128 {
                             0xF81F
                         } else {
                             let r = (pixel[0] >> 3) as u16;
