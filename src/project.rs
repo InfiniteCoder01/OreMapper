@@ -12,16 +12,24 @@ pub use uuid::Uuid;
 pub use crate::view::{
     atlas_view::{Atlas, AtlasView},
     editor_view::{Map, MapView},
-    inspector_view::ATLAS_RENDERER_UUID,
     inspector_view::{Component, ComponentView, Property},
+    inspector_view::{ATLAS_RENDERER_UUID, SERIALIZE_UUID},
 };
 
 use std::collections::HashMap;
 
-// ******************** ASSETS ******************** //
+// * --------------------------------------------------------------------------------- ASSETS --------------------------------------------------------------------------------- * //
+#[derive(Default)]
+pub struct NewMap {
+    pub name: String,
+    pub size: U16Vec2,
+    pub atlas: Uuid,
+}
+
 pub struct Assets {
     pub path: PathBuf,
     pub content_viewer_path: PathBuf,
+    pub new_map: Option<NewMap>,
     pub new_component_name: Option<String>,
 
     pub atlas_selected: Option<AtlasView>,
@@ -44,37 +52,43 @@ impl Assets {
         let mut maps = HashMap::new();
         let mut components = HashMap::new();
 
-        // * Atlases
-        for (uuid, path) in serde_json::from_str::<HashMap<Uuid, PathBuf>>(
-            &std::fs::read_to_string(path.join("atlases.json"))
-                .context("Failed to load atlas list!")?,
-        )
-        .context("Failed to deserialize atlas list!")?
-        {
-            atlases.insert(uuid, Atlas::new(&path)?);
-            uuids.insert(path, uuid);
+        macro_rules! load_uuids {
+            ($target: ident, $type: ty, $file: literal, $load_error: literal, $deserialize_error: literal) => {
+                if path.join("atlases.json").exists() {
+                    for (uuid, path) in serde_json::from_str::<HashMap<Uuid, PathBuf>>(
+                        &std::fs::read_to_string(path.join($file))
+                            .context(format!($load_error, path.join($file)))?,
+                    )
+                    .context($deserialize_error)?
+                    {
+                        $target.insert(uuid, <$type>::load(&path)?);
+                        uuids.insert(path, uuid);
+                    }
+                }
+            };
         }
 
-        // * Maps
-        for (uuid, path) in serde_json::from_str::<HashMap<Uuid, PathBuf>>(
-            &std::fs::read_to_string(path.join("maps.json")).context("Failed to load map list!")?,
-        )
-        .context("Failed to deserialize map list!")?
-        {
-            maps.insert(uuid, Map::load(&path)?);
-            uuids.insert(path, uuid);
-        }
-
-        // * Components
-        for (uuid, path) in serde_json::from_str::<HashMap<Uuid, PathBuf>>(
-            &std::fs::read_to_string(path.join("components.json"))
-                .context("Failed to load map list!")?,
-        )
-        .context("Failed to deserialize map list!")?
-        {
-            components.insert(uuid, Component::load(&path)?);
-            uuids.insert(path, uuid);
-        }
+        load_uuids!(
+            atlases,
+            Atlas,
+            "atlases.json",
+            "Failed to load atlas list from {:?}!",
+            "Failed to deserialize atlas list!"
+        );
+        load_uuids!(
+            maps,
+            Map,
+            "maps.json",
+            "Failed to load map list from {:?}!",
+            "Failed to deserialize map list!"
+        );
+        load_uuids!(
+            components,
+            Component,
+            "components.json",
+            "Failed to load component list from {:?}!",
+            "Failed to deserialize component list!"
+        );
 
         components.insert(
             ATLAS_RENDERER_UUID,
@@ -85,10 +99,18 @@ impl Assets {
                     .collect(),
             },
         );
+        components.insert(
+            SERIALIZE_UUID,
+            Component {
+                path: "/\nbuiltin/1 - Serialize".into(),
+                properties: indexmap::IndexMap::new(),
+            },
+        );
 
         Ok(Self {
             path: path.to_path_buf(),
             content_viewer_path: path.to_path_buf(),
+            new_map: None,
             new_component_name: None,
 
             atlas_selected: None,
@@ -106,33 +128,37 @@ impl Assets {
     }
 
     pub fn save(&self) -> Result<()> {
-        // * Atlases
-        std::fs::write(
-            self.path.join("atlases.json"),
-            serde_json::to_string(
-                &self
-                    .atlases
-                    .iter()
-                    .map(|(uuid, atlas)| (uuid, atlas.path.clone()))
-                    .collect::<HashMap<_, _>>(),
-            )
-            .context("Failed to serialize atlas list!")?,
-        )
-        .context("Failed to save atlas list!")?;
+        macro_rules! save_uuids {
+            ($target: ident, $name: ident, $file: literal, $serialize_error: literal, $save_error: literal) => {
+                std::fs::write(
+                    self.path.join($file),
+                    serde_json::to_string(
+                        &self
+                            .$target
+                            .iter()
+                            .map(|(uuid, $name)| (uuid, $name.path.clone()))
+                            .collect::<HashMap<_, _>>(),
+                    )
+                    .context($serialize_error)?,
+                )
+                .context($save_error)?;
+            };
+        }
 
-        // * Maps
-        std::fs::write(
-            self.path.join("maps.json"),
-            serde_json::to_string(
-                &self
-                    .maps
-                    .iter()
-                    .map(|(uuid, map)| (uuid, map.path.clone()))
-                    .collect::<HashMap<_, _>>(),
-            )
-            .context("Failed to serialize map list!")?,
-        )
-        .context("Failed to save map list!")?;
+        save_uuids!(
+            atlases,
+            atlas,
+            "atlases.json",
+            "Failed to serialize atlas list!",
+            "Failed to save atlas list!"
+        );
+        save_uuids!(
+            maps,
+            map,
+            "maps.json",
+            "Failed to serialize map list!",
+            "Failed to save map list!"
+        );
 
         // * Components
         std::fs::write(
@@ -176,7 +202,7 @@ impl Assets {
     }
 }
 
-// ******************** VECTORS ******************** //
+// * --------------------------------------------------------------------------------- VECTORS -------------------------------------------------------------------------------- * //
 impl Vec2Cast for egui::Pos2 {
     fn casted<T2: num::NumCast>(&self) -> TVec2<T2> {
         TVec2::new(

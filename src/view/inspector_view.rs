@@ -1,77 +1,11 @@
 use crate::project::*;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-// ******************** COMPONENT ******************** //
+// * -------------------------------------------------------------------------------- COMPONENT ------------------------------------------------------------------------------- * //
 pub const ATLAS_RENDERER_UUID: Uuid = uuid::uuid!("c85d40c6-0b66-44ef-8361-061547fd8125");
-
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Hash)]
-pub enum Property {
-    I8,
-    U8,
-    I16,
-    U16,
-    I32,
-    U32,
-    F32,
-    String,
-    Atlas,
-    Map,
-}
-
-impl Property {
-    pub const VALUES: [Self; 10] = [
-        Self::I8,
-        Self::U8,
-        Self::I16,
-        Self::U16,
-        Self::I32,
-        Self::U32,
-        Self::F32,
-        Self::String,
-        Self::Atlas,
-        Self::Map,
-    ];
-
-    pub fn fix_value(
-        &self,
-        valid_atalses: &HashSet<Uuid>,
-        valid_maps: &HashSet<Uuid>,
-        value: &String,
-    ) -> String {
-        fn fix_uuid(source: &HashSet<Uuid>, value: &str) -> String {
-            if let Ok(uuid) = Uuid::parse_str(value) {
-                if !source.contains(&uuid) {
-                    source.iter().next().unwrap().to_string()
-                } else {
-                    value.to_owned()
-                }
-            } else {
-                source.iter().next().unwrap().to_string()
-            }
-        }
-
-        match self {
-            Property::I8
-            | Property::U8
-            | Property::I16
-            | Property::U16
-            | Property::I32
-            | Property::U32
-            | Property::F32 => {
-                if value.is_empty() {
-                    "0".to_owned()
-                } else {
-                    value.chars().filter(|ch| ch.is_ascii_digit()).collect()
-                }
-            }
-            Property::Atlas => fix_uuid(valid_atalses, value),
-            Property::Map => fix_uuid(valid_maps, value),
-            Property::String => value.clone(),
-        }
-    }
-}
+pub const SERIALIZE_UUID: Uuid = uuid::uuid!("8d4db834-82c3-4c27-b49c-7c32c638e1ef");
 
 #[derive(Serialize, Deserialize)]
 pub struct Component {
@@ -81,9 +15,9 @@ pub struct Component {
 }
 
 impl Component {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(path: &Path) -> Self {
         Self {
-            path,
+            path: path.to_path_buf(),
             properties: IndexMap::new(),
         }
     }
@@ -120,16 +54,16 @@ impl Component {
     pub fn fix_instance(
         &self,
         instance: &mut HashMap<String, String>,
-        valid_atlases: &HashSet<Uuid>,
-        valid_maps: &HashSet<Uuid>,
+        valid_atlases: impl Iterator<Item = Uuid> + Clone,
+        valid_maps: impl Iterator<Item = Uuid> + Clone,
     ) {
         let mut new_instance = HashMap::new();
         for (name, property_type) in &self.properties {
             new_instance.insert(
                 name.clone(),
                 property_type.fix_value(
-                    valid_atlases,
-                    valid_maps,
+                    valid_atlases.clone(),
+                    valid_maps.clone(),
                     instance.get(name).unwrap_or(&String::new()),
                 ),
             );
@@ -138,6 +72,7 @@ impl Component {
     }
 }
 
+#[derive(Clone)]
 pub struct ComponentView {
     pub component: Uuid,
     pub adding: Option<(String, Property)>,
@@ -152,7 +87,7 @@ impl ComponentView {
     }
 }
 
-// ******************** FUNCTIONAL ******************** //
+// * ---------------------------------------------------------------------------------- SHOW ---------------------------------------------------------------------------------- * //
 pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
     // * Component
     if let Some(view) = &mut assets.component_selected {
@@ -177,7 +112,7 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
 
             ui.label(format!(
                 "Component: {}",
-                component.path.file_name().unwrap().to_str().unwrap()
+                component.path.file_stem().unwrap().to_str().unwrap()
             ));
             ui.separator();
 
@@ -244,26 +179,16 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
 
     // * Object
     if let Some(object) = assets.object_selected {
-        let atlas_names = assets
-            .atlases
-            .iter()
-            .map(|(uuid, atlas)| {
-                (
-                    *uuid,
-                    atlas.path.file_name().unwrap().to_str().unwrap().to_owned(),
-                )
-            })
-            .collect::<HashMap<Uuid, String>>();
         let map_names = assets
             .maps
             .iter()
             .map(|(uuid, map)| {
                 (
                     *uuid,
-                    map.path.file_name().unwrap().to_str().unwrap().to_owned(),
+                    map.path.file_stem().unwrap().to_str().unwrap().to_owned(),
                 )
             })
-            .collect::<HashMap<Uuid, String>>();
+            .collect::<Vec<_>>();
 
         let map = assets
             .maps
@@ -291,6 +216,8 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
 
         let pos = (object.pos.casted() as F32Vec2).component_div(&tile_size.casted());
         ui.label(format!("Object at ({:.2}; {:.2})", pos.x, pos.y));
+        ui.checkbox(&mut object.always_on_top, "Always on top");
+        let mut removed_component = None;
         for (uuid, properties) in object.components.iter_mut() {
             ui.separator();
             let component = assets
@@ -300,20 +227,40 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
 
             component.fix_instance(
                 properties,
-                &atlas_names.keys().copied().collect(),
-                &map_names.keys().copied().collect(),
+                assets.atlases.keys().copied(),
+                map_names.iter().map(|(uuid, _)| *uuid),
             );
 
-            ui.label(component.path.file_name().unwrap().to_str().unwrap());
+            ui.horizontal(|ui| {
+                ui.label(component.path.file_stem().unwrap().to_str().unwrap());
+                if ui.button("Remove").clicked() {
+                    removed_component = Some(*uuid);
+                }
+            });
             for (name, property_type) in component.properties.iter() {
                 ui.horizontal(|ui| -> Result<()> {
                     ui.label(name);
                     let value = properties.get_mut(name).unwrap();
-                    property_input(ui, &atlas_names, &map_names, name, property_type, value)?;
+                    property_value_input(
+                        ui,
+                        assets.atlases.iter().map(|(uuid, atlas)| {
+                            (
+                                *uuid,
+                                atlas.path.file_stem().unwrap().to_str().unwrap().to_owned(),
+                            )
+                        }),
+                        map_names.iter().cloned(),
+                        name,
+                        property_type,
+                        value,
+                    )?;
                     Ok(())
                 })
                 .inner?;
             }
+        }
+        if let Some(removed_component) = removed_component {
+            object.components.remove(&removed_component);
         }
 
         // Add component
@@ -325,7 +272,7 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
                     ui.selectable_value(
                         &mut selection,
                         Some(uuid),
-                        component.path.file_name().unwrap().to_str().unwrap(),
+                        component.path.file_stem().unwrap().to_str().unwrap(),
                     );
                 }
                 selection
@@ -341,8 +288,8 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
                     .collect();
                 component.fix_instance(
                     &mut properties,
-                    &atlas_names.keys().copied().collect(),
-                    &map_names.keys().copied().collect(),
+                    assets.atlases.keys().copied(),
+                    map_names.iter().map(|(uuid, _)| *uuid),
                 );
                 properties
             });
@@ -352,68 +299,124 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
     Ok(())
 }
 
-// ********************* SPECIAL WIDGETS ******************** ///
-fn property_input(
+// * -------------------------------------------------------------------------------- PROPERTY -------------------------------------------------------------------------------- * //
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug, Hash)]
+pub enum Property {
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    F32,
+    String,
+    Atlas,
+    Map,
+}
+
+impl Property {
+    pub const VALUES: [Self; 10] = [
+        Self::I8,
+        Self::U8,
+        Self::I16,
+        Self::U16,
+        Self::I32,
+        Self::U32,
+        Self::F32,
+        Self::String,
+        Self::Atlas,
+        Self::Map,
+    ];
+
+    pub fn fix_value(
+        &self,
+        valid_atalses: impl Iterator<Item = Uuid>,
+        valid_maps: impl Iterator<Item = Uuid>,
+        value: &str,
+    ) -> String {
+        fn fix_uuid(mut source: impl Iterator<Item = Uuid>, value: &str) -> String {
+            if let Ok(uuid) = Uuid::parse_str(value) {
+                if !source.contains(&uuid) {
+                    source.next().unwrap().to_string()
+                } else {
+                    value.to_owned()
+                }
+            } else {
+                source.next().unwrap().to_string()
+            }
+        }
+
+        match self {
+            Property::I8 => value.parse::<i8>().unwrap_or(0).to_string(),
+            Property::U8 => value.parse::<u8>().unwrap_or(0).to_string(),
+            Property::I16 => value.parse::<i16>().unwrap_or(0).to_string(),
+            Property::U16 => value.parse::<u16>().unwrap_or(0).to_string(),
+            Property::I32 => value.parse::<i32>().unwrap_or(0).to_string(),
+            Property::U32 => value.parse::<u32>().unwrap_or(0).to_string(),
+            Property::F32 => value.parse::<f32>().unwrap_or(0.0).to_string(),
+            Property::Atlas => fix_uuid(valid_atalses, value),
+            Property::Map => fix_uuid(valid_maps, value),
+            Property::String => value.to_owned(),
+        }
+    }
+}
+
+pub fn pick_uuid(
     ui: &mut Ui,
-    atlas_names: &HashMap<Uuid, String>,
-    map_names: &HashMap<Uuid, String>,
+    names: impl Iterator<Item = (Uuid, String)> + Clone,
+    id: impl std::hash::Hash,
+    value: &mut Uuid,
+) -> Result<()> {
+    ComboBox::from_id_source(id)
+        .selected_text(names.clone().find(|(uuid, _)| uuid == value).context(
+            "[PROBABLY A BUG] Atlas/Map from property was not found! Perhaps it was deleted?",
+        )?.1)
+        .show_ui(ui, |ui| {
+            for (uuid, name) in names.into_iter().sorted_by_key(|(_, name)| name.clone()) {
+                ui.selectable_value(value, uuid, name);
+            }
+        });
+    Ok(())
+}
+
+fn property_value_input(
+    ui: &mut Ui,
+    atlas_names: impl Iterator<Item = (Uuid, String)> + Clone,
+    map_names: impl Iterator<Item = (Uuid, String)> + Clone,
     id: impl std::hash::Hash,
     property_type: &Property,
     value: &mut String,
 ) -> Result<()> {
-    fn uuid_input(
-        ui: &mut Ui,
-        names: &HashMap<Uuid, String>,
-        id: impl std::hash::Hash,
-        value: &mut String,
-    ) -> Result<()> {
-        ComboBox::from_id_source(id)
-        .selected_text(names.get(&Uuid::parse_str(value).context("[PROBABLY A BUG] Atlas/Map UUID from property was invalid!")?).context(
-            "[PROBABLY A BUG] Atlas/Map from property was not found! Perhaps it was deleted?",
-        )?)
-        .show_ui(ui, |ui| {
-            for (uuid, name) in names.iter().sorted_by_key(|(_, name)| *name) {
-                ui.selectable_value(value, uuid.to_string(), name);
-            }
-        });
-        Ok(())
+    macro_rules! numeric_input {
+        ($type: ty) => {{
+            let mut numeric_value = value.parse::<$type>().unwrap_or(0 as _);
+            ui.add(egui::DragValue::new(&mut numeric_value).speed(0.05));
+            *value = numeric_value.to_string();
+        }};
     }
 
     match property_type {
-        Property::I8
-        | Property::U8
-        | Property::I16
-        | Property::U16
-        | Property::I32
-        | Property::U32
-        | Property::F32 => {
-            let response = ui.text_edit_singleline(value);
-            if response.changed() {
-                if matches!(property_type, Property::F32) {
-                    value.retain(|ch| ch.is_ascii_digit() || ch == '.');
-                    if let Some(dot_index) = value.find('.') {
-                        value.replace_range(
-                            dot_index + 1..,
-                            value[dot_index + 1..]
-                                .chars()
-                                .filter(|ch| *ch != '.')
-                                .collect::<String>()
-                                .as_str(),
-                        );
-                    }
-                } else {
-                    value.retain(|ch| ch.is_ascii_digit());
-                }
-            }
-        }
+        Property::I8 => numeric_input!(i8),
+        Property::U8 => numeric_input!(u8),
+        Property::I16 => numeric_input!(i16),
+        Property::U16 => numeric_input!(u16),
+        Property::I32 => numeric_input!(i32),
+        Property::U32 => numeric_input!(u32),
+        Property::F32 => numeric_input!(f32),
         Property::String => {
             ui.text_edit_singleline(value);
         }
         Property::Atlas => {
-            uuid_input(ui, atlas_names, id, value)?;
+            let mut uuid = Uuid::parse_str(value)
+                .context("[PROBABLY A BUG] Atlas/Map UUID from property was invalid!")?;
+            pick_uuid(ui, atlas_names, id, &mut uuid)?;
+            *value = uuid.to_string();
         }
         Property::Map => {
-            uuid_input(ui, map_names, id, value)?;
+            let mut uuid = Uuid::parse_str(value)
+                .context("[PROBABLY A BUG] Atlas/Map UUID from property was invalid!")?;
+            pick_uuid(ui, map_names, id, &mut uuid)?;
+            *value = uuid.to_string();
         }
     }
 

@@ -35,7 +35,7 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
                                 let uuid = if let Some(uuid) = assets.uuids.get(&path) {
                                     Ok(*uuid)
                                 } else {
-                                    Atlas::new(&path).map(|atlas| {
+                                    Atlas::load(&path).map(|atlas| {
                                         let uuid = Uuid::new_v4();
                                         assets.atlases.insert(uuid, atlas);
                                         assets.uuids.insert(path.clone(), uuid);
@@ -81,23 +81,88 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
 
                 // Create new map/component
                 ui.horizontal(|ui| -> Result<()> {
-                    if assets.new_component_name.is_some() {
-                        form(ui, "New Component", |ui| -> Result<()> {
+                    macro_rules! numeric_field {
+                        ($ui: ident, $assets: ident, $field: literal, $value: expr) => {
+                            $ui.horizontal(|ui| {
+                                ui.label($field);
+                                ui.add(egui::DragValue::new(&mut $value).speed(0.05));
+                            });
+                        };
+                    }
+
+                    if assets.new_map.is_some() {
+                        form(ui, "New Map", |ui| -> Result<()> {
                             ui.add(
                                 egui::TextEdit::singleline(
-                                    assets.new_component_name.as_mut().unwrap(),
+                                    &mut assets.new_map.as_mut().unwrap().name,
                                 )
                                 .desired_width(ui.available_width()),
+                            );
+
+                            numeric_field!(
+                                ui,
+                                assets,
+                                "Width",
+                                assets.new_map.as_mut().unwrap().size.x
+                            );
+                            numeric_field!(
+                                ui,
+                                assets,
+                                "Height",
+                                assets.new_map.as_mut().unwrap().size.y
+                            );
+                            crate::view::inspector_view::pick_uuid(
+                                ui,
+                                assets.atlases.iter().map(|(uuid, atlas)| {
+                                    (
+                                        *uuid,
+                                        atlas
+                                            .path
+                                            .file_stem()
+                                            .unwrap()
+                                            .to_str()
+                                            .unwrap()
+                                            .to_owned(),
+                                    )
+                                }),
+                                "Pick atlas for map",
+                                &mut assets.new_map.as_mut().unwrap().atlas,
+                            )
+                            .context("While constructing new map")?;
+
+                            if let Some(accepted) = ok_cancel(ui) {
+                                if accepted {
+                                    let new_map = assets.new_map.as_ref().unwrap();
+                                    let uuid = Uuid::new_v4();
+                                    let path = assets
+                                        .content_viewer_path
+                                        .join(format!("{}.map", new_map.name));
+                                    let map = Map::new(&path, new_map.size, new_map.atlas);
+                                    map.save()?;
+                                    assets.maps.insert(uuid, map);
+                                    assets.uuids.insert(path, uuid);
+                                }
+                                assets.new_map = None;
+                            }
+                            Ok(())
+                        })?;
+                    }
+
+                    if assets.new_component_name.is_some() {
+                        form(ui, "New Component", |ui| -> Result<()> {
+                            let new_component_name = assets.new_component_name.as_mut().unwrap();
+                            ui.add(
+                                egui::TextEdit::singleline(new_component_name)
+                                    .desired_width(ui.available_width()),
                             );
 
                             if let Some(accepted) = ok_cancel(ui) {
                                 if accepted {
                                     let uuid = Uuid::new_v4();
-                                    let path = assets.content_viewer_path.join(format!(
-                                        "{}.cmp",
-                                        assets.new_component_name.as_ref().unwrap()
-                                    ));
-                                    let component = Component::new(path.clone());
+                                    let path = assets
+                                        .content_viewer_path
+                                        .join(format!("{}.cmp", new_component_name));
+                                    let component = Component::new(&path);
                                     component.save()?;
                                     assets.components.insert(uuid, component);
                                     assets.uuids.insert(path, uuid);
@@ -108,13 +173,20 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) -> Result<()> {
                         })?;
                     }
 
+                    if !assets.atlases.is_empty() && ui.button("New Map").clicked() {
+                        assets.new_map = Some(NewMap {
+                            atlas: *assets.atlases.iter().next().unwrap().0,
+                            ..NewMap::default()
+                        });
+                    }
+
                     if ui.button("New Component").clicked() {
                         assets.new_component_name = Some("".to_owned());
                     }
+
                     Ok(())
                 })
-                .inner?;
-                Ok(())
+                .inner
             })
             .inner
         })

@@ -1,33 +1,28 @@
- ✔ Organize TODO @done (23-06-01 13:59)
+ To first release:
+   ✔ Create/Open Project @done (23-06-17 21:47)
+   ✔ Create map @done (23-06-19 13:32)
+   ✔ Edit tile size @done (23-06-24 12:31)
 
- Important:
-  ✔ Save objects together with map @done (23-06-02 00:19)
-  ☐ Unsafe math `as_type`!!!
+ Important & Bugfixes:
+  ☐ Clamp math `casted`!!!
+  ☐ When in property editor - arrows move objects
 
- Project:
-   ☐ Create/Open Project
-   ☐ Remember last project
+ Really useful:
+   ✔ Resizing maps @done (23-06-26 16:24)
 
- Content View:
-   ☐ Create map
-   ☐ Move/rename files
- 
-   ☐ Delete files
-   ☐ Check uif atlas was deleted in map
-   ☐ Check if atlas/map was deleted in object's component properties
-
-
- Components:
-   ✔ Object component properties sorted @done (23-05-31 14:46)
-   ✔ Reorder component properties @done (23-06-01 17:11)
-   ✔ Check object's component properties against base component properties @done (23-05-31 23:01)
-
- Other:
-   ☐ Edit tile size
-   ☐ Resizing maps
-   ✔ Move object using arrows @done (23-06-01 19:39)
-   ☐ Snap object to a grid 
+ Useful:
    ☐ Better atlas/map select
+   ✔ Mode (Object(OnPress - Object create/select/delete)/Tile(Not object, OnHeld - Tile paint/erase)) @done (23-06-18 19:41)
+   Content View:
+     ☐ Move/rename files
+     ☐ Delete files
+
 
  Polish:
    ☐ Add font awesome
+   ☐ Snap object to a grid 
+   ✔ F5 to reload @done (23-06-19 13:34)
+   ☐ Ctrl(+Alt)+K to open project folder in OS file explorer
+
+   Project:
+     ☐ Remember last project

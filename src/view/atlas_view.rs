@@ -1,18 +1,19 @@
 use crate::project::*;
 use itertools::Itertools;
 
-// ******************** ATLAS ******************** //
+// * ---------------------------------------------------------------------------------- ATLAS --------------------------------------------------------------------------------- * //
 #[derive(Serialize, Deserialize)]
 pub struct Atlas {
     #[serde(skip)]
     pub path: PathBuf,
     #[serde(skip)]
     pub image: image::RgbaImage,
+    #[serde(default)]
     pub tile_size: U16Vec2,
 }
 
 impl Atlas {
-    pub fn new(path: &Path) -> Result<Self> {
+    pub fn load(path: &Path) -> Result<Self> {
         let image = image::open(path.to_str().unwrap())
             .context("Failed to load IMAGE!")?
             .to_rgba8();
@@ -67,6 +68,7 @@ impl Atlas {
     }
 }
 
+#[derive(Clone)]
 pub struct AtlasView {
     pub atlas: Uuid,
     pub selection_pos: U32Vec2,
@@ -83,10 +85,15 @@ impl AtlasView {
     }
 }
 
-// ******************** FUNCTIONALITY ******************** //
+// * ---------------------------------------------------------------------------------- SHOW ---------------------------------------------------------------------------------- * //
 pub fn show(ui: &mut Ui, assets: &mut Assets) {
     if let Some(view) = assets.atlas_selected.as_mut() {
-        if let Some(atlas) = assets.atlases.get(&view.atlas) {
+        if let Some(atlas) = assets.atlases.get_mut(&view.atlas) {
+            ui.horizontal(|ui| {
+                ui.add(egui::DragValue::new(&mut atlas.tile_size.x).clamp_range(1..=65535));
+                ui.add(egui::DragValue::new(&mut atlas.tile_size.y).clamp_range(1..=65535));
+            });
+
             let scale = (ui.available_size().x / atlas.image.width() as f32)
                 .min(ui.available_size().y / atlas.image.height() as f32);
             let tile_size = atlas.tile_size.casted() * scale;
@@ -126,7 +133,7 @@ pub fn show(ui: &mut Ui, assets: &mut Assets) {
                     view.selection_pos = tile_pos;
                 }
                 if ui.input(|input| input.pointer.button_down(PointerButton::Primary)) {
-                    view.selection_size = (tile_pos - view.selection_pos).add_scalar(1);
+                    view.selection_size = tile_pos - view.selection_pos + 1.casted();
                 }
             }
         } else {
