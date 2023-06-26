@@ -13,6 +13,7 @@
  Useful:
    ☐ Better atlas/map select
    ✔ Mode (Object(OnPress - Object create/select/delete)/Tile(Not object, OnHeld - Tile paint/erase)) @done (23-06-18 19:41)
+   ☐ Resize map by dragging it's sides/corners
    Content View:
      ☐ Move/rename files
      ☐ Delete files
